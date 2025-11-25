@@ -1,8 +1,8 @@
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from app.models import IngestRequest, ChatRequest, ChatResponse
-from app.rag import ingest_doc, get_chat_response, init_db
+from app.models import IngestRequest, ChatRequest, ChatResponse, MetadataStatsResponse
+from app.rag import ingest_doc, get_chat_response, init_db, get_metadata_stats
 import logging
 
 logging.basicConfig(level=logging.INFO)
@@ -45,10 +45,26 @@ async def ingest(request: IngestRequest):
 async def chat(request: ChatRequest):
     try:
         logger.info(f"Received chat request: {request.query}")
-        response = get_chat_response(request.query, request.session_id, request.namespace)
+        response = get_chat_response(
+            request.query, 
+            request.session_id, 
+            request.namespace,
+            request.metadata_filters  # Pass metadata filters
+        )
         return response
     except Exception as e:
         logger.error(f"Chat failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/metadata/stats", response_model=MetadataStatsResponse)
+async def metadata_stats(namespace: str = None):
+    """Get available namespaces and metadata fields."""
+    try:
+        logger.info(f"Fetching metadata stats for namespace: {namespace}")
+        stats = get_metadata_stats(namespace)
+        return stats
+    except Exception as e:
+        logger.error(f"Metadata stats failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/health")
