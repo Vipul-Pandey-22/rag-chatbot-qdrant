@@ -8,6 +8,9 @@ const ChatWindow = ({ namespace }) => {
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [sessionId] = useState(() => 'session-' + Math.random().toString(36).substr(2, 9));
+  const [metadataStats, setMetadataStats] = useState(null);
+  const [activeFilters, setActiveFilters] = useState({});
+  const [showFilters, setShowFilters] = useState(false);
   const messagesEndRef = useRef(null);
 
   const scrollToBottom = () => {
@@ -15,6 +18,35 @@ const ChatWindow = ({ namespace }) => {
   };
 
   useEffect(scrollToBottom, [messages]);
+
+  // Fetch metadata stats when namespace changes
+  useEffect(() => {
+    const fetchStats = async () => {
+      try {
+        const res = await axios.get('http://localhost:8000/metadata/stats', {
+          params: { namespace }
+        });
+        setMetadataStats(res.data);
+      } catch (error) {
+        console.error("Failed to fetch metadata stats:", error);
+      }
+    };
+    fetchStats();
+    // Reset filters when namespace changes
+    setActiveFilters({});
+  }, [namespace]);
+
+  const handleFilterChange = (key, value) => {
+    setActiveFilters(prev => {
+      const newFilters = { ...prev };
+      if (value === "") {
+        delete newFilters[key];
+      } else {
+        newFilters[key] = value;
+      }
+      return newFilters;
+    });
+  };
 
   const handleSend = async () => {
     if (!input.trim()) return;
@@ -28,7 +60,8 @@ const ChatWindow = ({ namespace }) => {
       const res = await axios.post('http://localhost:8000/chat', {
         query: userMsg.text,
         session_id: sessionId,
-        namespace
+        namespace,
+        metadata_filters: Object.keys(activeFilters).length > 0 ? activeFilters : null
       });
       
       const botMsg = { role: 'bot', text: res.data.answer, sources: res.data.sources };
@@ -43,6 +76,54 @@ const ChatWindow = ({ namespace }) => {
 
   return (
     <div className="glass-panel" style={{ display: 'flex', flexDirection: 'column', height: '600px' }}>
+      {/* Filters Section */}
+      <div style={{ padding: '0.75rem', borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+        <button 
+          onClick={() => setShowFilters(!showFilters)}
+          style={{ 
+            background: 'none', 
+            border: 'none', 
+            color: '#94a3b8', 
+            cursor: 'pointer', 
+            fontSize: '0.875rem', 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '0.5rem' 
+          }}
+        >
+          <span>{showFilters ? '▼' : '▶'}</span> Advanced Filters
+          {Object.keys(activeFilters).length > 0 && (
+            <span style={{ background: '#3b82f6', color: 'white', padding: '0.1rem 0.4rem', borderRadius: '9999px', fontSize: '0.75rem' }}>
+              {Object.keys(activeFilters).length}
+            </span>
+          )}
+        </button>
+        
+        {showFilters && metadataStats && metadataStats.metadata_keys && (
+          <div style={{ marginTop: '0.75rem', display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+            {Object.entries(metadataStats.metadata_keys).map(([key, values]) => (
+              <div key={key} style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+                <label style={{ fontSize: '0.75rem', color: '#94a3b8' }}>{key}</label>
+                <select
+                  className="input-field"
+                  style={{ padding: '0.25rem', fontSize: '0.875rem', minWidth: '120px' }}
+                  value={activeFilters[key] || ""}
+                  onChange={(e) => handleFilterChange(key, e.target.value)}
+                >
+                  <option value="">All</option>
+                  {values.map(val => (
+                    <option key={val} value={val}>{val}</option>
+                  ))}
+                </select>
+              </div>
+            ))}
+            {Object.keys(metadataStats.metadata_keys).length === 0 && (
+              <p style={{ fontSize: '0.875rem', color: '#64748b' }}>No metadata available for filtering.</p>
+            )}
+          </div>
+        )}
+      </div>
+
       <div style={{ flex: 1, overflowY: 'auto', padding: '1rem' }}>
         {messages.length === 0 && (
           <div style={{ textAlign: 'center', color: '#94a3b8', marginTop: '5rem' }}>
@@ -69,7 +150,20 @@ const ChatWindow = ({ namespace }) => {
                   <strong>Sources:</strong>
                   <ul style={{ paddingLeft: '1rem', marginTop: '0.25rem' }}>
                     {msg.sources.map((s, i) => (
-                      <li key={i}>{s.source || 'Unknown'} (Namespace: {s.namespace})</li>
+                      <li key={i}>
+                        {/* Display metadata badges */}
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', marginBottom: '0.25rem' }}>
+                          {Object.entries(s).map(([k, v]) => {
+                            if (k === 'text' || k === 'namespace') return null;
+                            return (
+                              <span key={k} style={{ background: '#334155', padding: '0.1rem 0.3rem', borderRadius: '4px', fontSize: '0.7rem' }}>
+                                {k}: {v}
+                              </span>
+                            );
+                          })}
+                        </div>
+                        <span style={{ opacity: 0.8 }}>{s.text ? s.text.substring(0, 100) + '...' : 'No text content'}</span>
+                      </li>
                     ))}
                   </ul>
                 </div>

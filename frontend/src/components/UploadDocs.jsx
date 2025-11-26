@@ -8,6 +8,7 @@ const UploadDocs = ({ namespace }) => {
   const [text, setText] = useState('');
   const [status, setStatus] = useState('idle'); // idle, uploading, success, error
   const [errorMessage, setErrorMessage] = useState('');
+  const [metadataList, setMetadataList] = useState([{ key: 'source', value: 'user-upload' }]);
 
   const onDrop = useCallback((acceptedFiles) => {
     const file = acceptedFiles[0];
@@ -26,18 +27,45 @@ const UploadDocs = ({ namespace }) => {
     multiple: false
   });
 
+  const handleMetadataChange = (index, field, value) => {
+    const newList = [...metadataList];
+    newList[index][field] = value;
+    setMetadataList(newList);
+  };
+
+  const addMetadataField = () => {
+    setMetadataList([...metadataList, { key: '', value: '' }]);
+  };
+
+  const removeMetadataField = (index) => {
+    const newList = [...metadataList];
+    newList.splice(index, 1);
+    setMetadataList(newList);
+  };
+
   const handleUpload = async () => {
     if (!text.trim()) return;
     setStatus('uploading');
     setErrorMessage('');
+    
+    // Convert metadata list to object
+    const metadataObj = {};
+    metadataList.forEach(item => {
+      if (item.key.trim()) {
+        metadataObj[item.key.trim()] = item.value;
+      }
+    });
+
     try {
       await axios.post('http://localhost:8000/ingest', {
         text,
-        metadata: { source: 'user-upload' },
+        metadata: metadataObj,
         namespace
       });
       setStatus('success');
       setText('');
+      // Reset metadata to default
+      setMetadataList([{ key: 'source', value: 'user-upload' }]);
       setTimeout(() => setStatus('idle'), 3000);
     } catch (error) {
       console.error(error);
@@ -93,6 +121,44 @@ const UploadDocs = ({ namespace }) => {
         value={text}
         onChange={(e) => setText(e.target.value)}
       />
+
+      {/* Metadata Section */}
+      <div style={{ marginBottom: '1rem' }}>
+        <label style={{ display: 'block', marginBottom: '0.5rem', fontSize: '0.875rem', color: '#94a3b8' }}>Metadata</label>
+        {metadataList.map((item, index) => (
+          <div key={index} style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem' }}>
+            <input
+              type="text"
+              className="input-field"
+              placeholder="Key (e.g., author)"
+              value={item.key}
+              onChange={(e) => handleMetadataChange(index, 'key', e.target.value)}
+              style={{ flex: 1 }}
+            />
+            <input
+              type="text"
+              className="input-field"
+              placeholder="Value (e.g., John Doe)"
+              value={item.value}
+              onChange={(e) => handleMetadataChange(index, 'value', e.target.value)}
+              style={{ flex: 1 }}
+            />
+            <button
+              onClick={() => removeMetadataField(index)}
+              style={{ background: 'rgba(239, 68, 68, 0.2)', color: '#ef4444', border: '1px solid rgba(239, 68, 68, 0.3)', borderRadius: '0.375rem', padding: '0.5rem', cursor: 'pointer' }}
+              title="Remove field"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        ))}
+        <button
+          onClick={addMetadataField}
+          style={{ fontSize: '0.875rem', color: '#60a5fa', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+        >
+          + Add Metadata Field
+        </button>
+      </div>
 
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <button 
