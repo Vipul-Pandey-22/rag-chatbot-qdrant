@@ -8,6 +8,8 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from app.settings import settings
+import io
+from pypdf import PdfReader
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -46,6 +48,20 @@ def init_db() -> None:
             logger.warning(f"Attempt {i+1}/{max_retries} to connect to Qdrant failed: {e}")
             time.sleep(2)
     logger.error("Could not connect to Qdrant after multiple retries")
+
+
+def extract_text_from_pdf(pdf_bytes: bytes) -> str:
+    """Extract text from PDF bytes."""
+    try:
+        pdf_file = io.BytesIO(pdf_bytes)
+        reader = PdfReader(pdf_file)
+        text = ""
+        for page in reader.pages:
+            text += page.extract_text() + "\n"
+        return text.strip()
+    except Exception as e:
+        logger.error(f"Failed to extract text from PDF: {e}")
+        raise ValueError(f"PDF extraction failed: {e}")
 
 
 def ingest_doc(text: str, metadata: Dict[str, Any], namespace: str) -> None:
@@ -170,12 +186,27 @@ Context:
 
 History:
 {history_text}
+
+IMPORTANT: Before answering, think through the problem step-by-step to ensure accuracy. 
+Enclose your thinking process within <reasoning>...</reasoning> tags.
+Then, provide your final answer outside the tags.
 """
     final_prompt = ChatPromptTemplate.from_messages(
         [("system", system_prompt), ("user", "{question}")]
     )
     chain = final_prompt | llm | StrOutputParser()
-    answer = chain.invoke({"question": query})
+    raw_response = chain.invoke({"question": query})
+    
+    # Parse reasoning and answer
+    reasoning = None
+    answer = raw_response
+    
+    if "<reasoning>" in raw_response and "</reasoning>" in raw_response:
+        start = raw_response.find("<reasoning>") + len("<reasoning>")
+        end = raw_response.find("</reasoning>")
+        reasoning = raw_response[start:end].strip()
+        # Remove reasoning from answer
+        answer = raw_response.replace(f"<reasoning>{reasoning}</reasoning>", "").strip()
     
     # 4️⃣ Store user turn
     qdrant.upsert(
@@ -211,4 +242,8 @@ History:
         ],
     )
     
-    return {"answer": answer, "sources": [hit.payload for hit in search_result]}
+    return {
+        "answer": answer, 
+        "reasoning": reasoning,
+        "sources": [hit.payload for hit in search_result]
+    }

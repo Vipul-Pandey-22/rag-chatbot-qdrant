@@ -14,6 +14,7 @@ class ChatRequest(BaseModel):
 
 class ChatResponse(BaseModel):
     answer: str
+    reasoning: Optional[str] = None
     sources: List[Dict[str, Any]]
 
 class MetadataStatsResponse(BaseModel):

@@ -1,9 +1,10 @@
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from app.models import IngestRequest, ChatRequest, ChatResponse, MetadataStatsResponse
-from app.rag import ingest_doc, get_chat_response, init_db, get_metadata_stats
+from app.rag import ingest_doc, get_chat_response, init_db, get_metadata_stats, extract_text_from_pdf
 import logging
+import json
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -39,6 +40,41 @@ async def ingest(request: IngestRequest):
         return {"status": "success", "message": "Document ingested"}
     except Exception as e:
         logger.error(f"Ingest failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/ingest/file")
+async def ingest_file(
+    file: UploadFile = File(...),
+    namespace: str = Form(...),
+    metadata: str = Form("{}")
+):
+    """Ingest a file (PDF or TXT) with metadata."""
+    try:
+        logger.info(f"Received file upload: {file.filename} for namespace: {namespace}")
+        
+        # Read file content
+        file_content = await file.read()
+        
+        # Extract text based on file type
+        if file.filename.endswith('.pdf'):
+            text = extract_text_from_pdf(file_content)
+        elif file.filename.endswith('.txt'):
+            text = file_content.decode('utf-8')
+        else:
+            raise HTTPException(status_code=400, detail="Unsupported file type. Only PDF and TXT are supported.")
+        
+        # Parse metadata JSON
+        metadata_dict = json.loads(metadata)
+        metadata_dict['filename'] = file.filename
+        
+        # Ingest the document
+        ingest_doc(text, metadata_dict, namespace)
+        
+        return {"status": "success", "message": f"File {file.filename} ingested successfully"}
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=400, detail="Invalid metadata JSON")
+    except Exception as e:
+        logger.error(f"File ingest failed: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/chat", response_model=ChatResponse)

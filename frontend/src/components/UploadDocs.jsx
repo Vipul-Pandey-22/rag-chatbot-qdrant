@@ -9,21 +9,33 @@ const UploadDocs = ({ namespace }) => {
   const [status, setStatus] = useState('idle'); // idle, uploading, success, error
   const [errorMessage, setErrorMessage] = useState('');
   const [metadataList, setMetadataList] = useState([{ key: 'source', value: 'user-upload' }]);
+  const [uploadedFile, setUploadedFile] = useState(null);
 
   const onDrop = useCallback((acceptedFiles) => {
     const file = acceptedFiles[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        setText(reader.result);
-      };
-      reader.readAsText(file);
+      setUploadedFile(file);
+      
+      // For text files, show preview
+      if (file.type.startsWith('text/') || file.name.endsWith('.txt')) {
+        const reader = new FileReader();
+        reader.onload = () => {
+          setText(reader.result);
+        };
+        reader.readAsText(file);
+      } else if (file.name.endsWith('.pdf')) {
+        setText(`PDF file: ${file.name} (${(file.size / 1024).toFixed(2)} KB)`);
+      }
     }
   }, []);
 
   const { getRootProps, getInputProps, isDragActive } = useDropzone({ 
     onDrop, 
-    accept: { 'text/*': ['.txt', '.md', '.json', '.csv'], 'application/json': ['.json'] },
+    accept: { 
+      'text/*': ['.txt', '.md', '.json', '.csv'], 
+      'application/json': ['.json'],
+      'application/pdf': ['.pdf']
+    },
     multiple: false
   });
 
@@ -44,7 +56,6 @@ const UploadDocs = ({ namespace }) => {
   };
 
   const handleUpload = async () => {
-    if (!text.trim()) return;
     setStatus('uploading');
     setErrorMessage('');
     
@@ -57,13 +68,34 @@ const UploadDocs = ({ namespace }) => {
     });
 
     try {
-      await axios.post('http://localhost:8000/ingest', {
-        text,
-        metadata: metadataObj,
-        namespace
-      });
+      if (uploadedFile) {
+        // File upload via FormData
+        const formData = new FormData();
+        formData.append('file', uploadedFile);
+        formData.append('namespace', namespace);
+        formData.append('metadata', JSON.stringify(metadataObj));
+
+        await axios.post('http://localhost:8000/ingest/file', formData, {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+        });
+      } else if (text.trim()) {
+        // Text upload via JSON
+        await axios.post('http://localhost:8000/ingest', {
+          text,
+          metadata: metadataObj,
+          namespace
+        });
+      } else {
+        setStatus('error');
+        setErrorMessage('Please provide text or upload a file');
+        return;
+      }
+
       setStatus('success');
       setText('');
+      setUploadedFile(null);
       // Reset metadata to default
       setMetadataList([{ key: 'source', value: 'user-upload' }]);
       setTimeout(() => setStatus('idle'), 3000);

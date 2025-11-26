@@ -64,7 +64,12 @@ const ChatWindow = ({ namespace }) => {
         metadata_filters: Object.keys(activeFilters).length > 0 ? activeFilters : null
       });
       
-      const botMsg = { role: 'bot', text: res.data.answer, sources: res.data.sources };
+      const botMsg = { 
+        role: 'bot', 
+        text: res.data.answer, 
+        reasoning: res.data.reasoning, // Extract reasoning
+        sources: res.data.sources 
+      };
       setMessages(prev => [...prev, botMsg]);
     } catch (error) {
       console.error(error);
@@ -144,6 +149,30 @@ const ChatWindow = ({ namespace }) => {
             </div>
             
             <div style={{ maxWidth: '80%', padding: '0.75rem', borderRadius: '0.5rem', background: msg.role === 'user' ? 'rgba(37, 99, 235, 0.2)' : 'rgba(51, 65, 85, 0.3)', border: msg.role === 'user' ? '1px solid rgba(59, 130, 246, 0.3)' : '1px solid rgba(71, 85, 105, 0.3)' }}>
+              {/* Reasoning Section */}
+              {msg.reasoning && (
+                <div style={{ marginBottom: '0.75rem' }}>
+                  <details style={{ cursor: 'pointer' }}>
+                    <summary style={{ fontSize: '0.75rem', color: '#94a3b8', display: 'flex', alignItems: 'center', gap: '0.25rem', userSelect: 'none' }}>
+                      <span>💭</span> View Reasoning
+                    </summary>
+                    <div style={{ 
+                      marginTop: '0.5rem', 
+                      padding: '0.75rem', 
+                      background: 'rgba(0, 0, 0, 0.2)', 
+                      borderRadius: '0.375rem', 
+                      fontSize: '0.875rem', 
+                      color: '#cbd5e1', 
+                      borderLeft: '2px solid #64748b',
+                      whiteSpace: 'pre-wrap',
+                      fontStyle: 'italic'
+                    }}>
+                      {msg.reasoning}
+                    </div>
+                  </details>
+                </div>
+              )}
+
               <p style={{ whiteSpace: 'pre-wrap', margin: 0 }}>{msg.text}</p>
               {msg.sources && msg.sources.length > 0 && (
                 <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: '#94a3b8', borderTop: '1px solid #374151', paddingTop: '0.5rem' }}>
