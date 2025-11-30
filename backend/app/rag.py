@@ -61,7 +61,7 @@ def ingest_doc(text: str, metadata: Dict[str, Any], namespace: str) -> None:
             models.PointStruct(id=str(uuid.uuid4()), vector=vector, payload=payload)
         ],
     )
-    logger.info("Document ingested successfully")
+    logger.info(f"Document ingested successfully with metadata: {metadata}")
 
 
 def get_hyde_embedding(query: str) -> List[float]:
@@ -88,20 +88,68 @@ def _retrieve_history(session_id: str) -> List[models.PointStruct]:
     return points[-settings.MEMORY_WINDOW * 2 :] if points else []
 
 
-def get_chat_response(query: str, session_id: str, namespace: str) -> Dict[str, Any]:
+def get_metadata_stats(namespace: str = None) -> Dict[str, Any]:
+    """Retrieve available namespaces and metadata fields from Qdrant."""
+    # Scroll all documents (or filtered by namespace)
+    filter_condition = None
+    if namespace:
+        filter_condition = models.Filter(
+            must=[models.FieldCondition(key="namespace", match=models.MatchValue(value=namespace))]
+        )
+    
+    points, _ = qdrant.scroll(
+        collection_name=DOCS_COLLECTION,
+        scroll_filter=filter_condition,
+        limit=1000,  # Get a good sample
+        with_payload=True,
+    )
+    
+    # Extract unique namespaces and metadata keys
+    namespaces = set()
+    metadata_keys = {}
+    
+    for point in points:
+        payload = point.payload
+        if "namespace" in payload:
+            namespaces.add(payload["namespace"])
+        
+        # Collect all metadata keys (exclude system fields)
+        for key, value in payload.items():
+            if key not in ["text", "namespace"]:
+                if key not in metadata_keys:
+                    metadata_keys[key] = set()
+                metadata_keys[key].add(str(value))  # Convert to string for JSON serialization
+    
+    # Convert sets to lists
+    return {
+        "namespaces": sorted(list(namespaces)),
+        "metadata_keys": {k: sorted(list(v)) for k, v in metadata_keys.items()}
+    }
+
+
+def get_chat_response(query: str, session_id: str, namespace: str, metadata_filters: Dict[str, Any] = None) -> Dict[str, Any]:
     """Main RAG pipeline: retrieve docs, build prompt, call LLM, store turn."""
     logger.info(
-        f"Processing chat query: {query} (session: {session_id}, namespace: {namespace})"
+        f"Processing chat query: {query} (session: {session_id}, namespace: {namespace}, filters: {metadata_filters})"
     )
     
     # 1️ Retrieve relevant documents (HyDE)
     query_vector = get_hyde_embedding(query)
+    
+    # Build dynamic filter conditions
+    filter_conditions = [models.FieldCondition(key="namespace", match=models.MatchValue(value=namespace))]
+    
+    # Add metadata filters if provided
+    if metadata_filters:
+        for key, value in metadata_filters.items():
+            filter_conditions.append(
+                models.FieldCondition(key=key, match=models.MatchValue(value=value))
+            )
+    
     search_result = qdrant.query_points(
         collection_name=DOCS_COLLECTION,
         query=query_vector,
-        query_filter=models.Filter(
-            must=[models.FieldCondition(key="namespace", match=models.MatchValue(value=namespace))]
-        ),
+        query_filter=models.Filter(must=filter_conditions),
         limit=3,  # Reduced from 5 to avoid Groq token limit
     ).points
     

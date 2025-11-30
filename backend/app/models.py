@@ -10,7 +10,12 @@ class ChatRequest(BaseModel):
     query: str
     session_id: str
     namespace: str = "default"
+    metadata_filters: Optional[Dict[str, Any]] = None  # Optional metadata filters for search
 
 class ChatResponse(BaseModel):
     answer: str
     sources: List[Dict[str, Any]]
+
+class MetadataStatsResponse(BaseModel):
+    namespaces: List[str]
+    metadata_keys: Dict[str, List[Any]]  # key -> list of unique values
